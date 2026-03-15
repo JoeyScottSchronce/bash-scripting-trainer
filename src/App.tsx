@@ -128,7 +128,7 @@ export default function App() {
     setIsLoading(true);
     setAppState('LOADING_CHALLENGE');
     try {
-      const challenge = await generateChallenge(session.selectedCommand);
+      const challenge = await generateChallenge(session.selectedCommand, selectedDifficulty);
       setSession(prev => ({
         ...prev,
         currentChallenge: challenge,

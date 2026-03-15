@@ -21,7 +21,7 @@ export async function generateChallenge(command: string, difficulty: Difficulty 
         properties: {
           description: { type: Type.STRING, description: "Clear description of what the user needs to do." },
           context: { type: Type.STRING, description: "Sample input or environment context (e.g. 'You have a file named data.txt with...') " },
-          expectedCommandHint: { type: Type.STRING, description: "A small hint about the command structure." },
+          expectedCommandHint: { type: Type.STRING, description: "A small generic hint about the command structure without providing the answer to the question (e.g. Use 'command -flags file_name', not 'cut -f 4,5,7-9 spreadsheet.ods'.)." },
           difficulty: { type: Type.STRING, enum: ["BEGINNER", "INTERMEDIATE", "ADVANCED"] }
         },
         required: ["description", "context", "expectedCommandHint", "difficulty"]
