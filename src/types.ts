@@ -1,7 +1,10 @@
+export type Difficulty = 'BEGINNER' | 'INTERMEDIATE' | 'ADVANCED';
+
 export interface Challenge {
   description: string;
   context: string;
   expectedCommandHint: string;
+  difficulty: Difficulty;
 }
 
 export interface GradingResult {

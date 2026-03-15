@@ -1,12 +1,17 @@
 import { GoogleGenAI, Type } from "@google/genai";
-import { Challenge, GradingResult } from "../types";
+import { Challenge, GradingResult, Difficulty } from "../types";
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
 
-export async function generateChallenge(command: string): Promise<Challenge> {
+function cleanJsonResponse(text: string): string {
+  return text.replace(/```json\n?/, "").replace(/\n?```/, "").trim();
+}
+
+export async function generateChallenge(command: string, difficulty: Difficulty = 'BEGINNER'): Promise<Challenge> {
   const response = await ai.models.generateContent({
     model: "gemini-3-flash-preview",
     contents: `Generate a Bash one-liner challenge for the command: ${command}. 
+    Difficulty Level: ${difficulty}.
     Provide a description of the task and a sample input/output context if applicable.
     The challenge should be solvable with a single line of bash.`,
     config: {
@@ -16,16 +21,18 @@ export async function generateChallenge(command: string): Promise<Challenge> {
         properties: {
           description: { type: Type.STRING, description: "Clear description of what the user needs to do." },
           context: { type: Type.STRING, description: "Sample input or environment context (e.g. 'You have a file named data.txt with...') " },
-          expectedCommandHint: { type: Type.STRING, description: "A small hint about the command structure." }
+          expectedCommandHint: { type: Type.STRING, description: "A small hint about the command structure." },
+          difficulty: { type: Type.STRING, enum: ["BEGINNER", "INTERMEDIATE", "ADVANCED"] }
         },
-        required: ["description", "context", "expectedCommandHint"]
+        required: ["description", "context", "expectedCommandHint", "difficulty"]
       },
       systemInstruction: "You are an expert Bash scripting tutor. You generate concise, educational one-liner challenges for specific Linux commands. Focus on practical, real-world scenarios."
     }
   });
 
   try {
-    return JSON.parse(response.text || "{}") as Challenge;
+    const cleanedText = cleanJsonResponse(response.text || "{}");
+    return JSON.parse(cleanedText) as Challenge;
   } catch (e) {
     throw new Error("Failed to parse AI response for challenge generation.");
   }
@@ -59,7 +66,8 @@ export async function gradeSubmission(challenge: Challenge, submission: string):
   });
 
   try {
-    return JSON.parse(response.text || "{}") as GradingResult;
+    const cleanedText = cleanJsonResponse(response.text || "{}");
+    return JSON.parse(cleanedText) as GradingResult;
   } catch (e) {
     throw new Error("Failed to parse AI response for grading.");
   }
