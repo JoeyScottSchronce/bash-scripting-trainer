@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, createContext, useContext } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { 
   Terminal, 
   ChevronRight, 
@@ -17,6 +17,46 @@ import { COMMAND_LIST, APP_THEME } from './constants';
 import { AppState, Challenge, GradingResult, SessionState } from './types';
 import { generateChallenge, gradeSubmission } from './services/aiService';
 
+// Simple Notification Provider to match the requested format
+const NotificationContext = createContext<{
+  notify: (message: string, type?: 'success' | 'error') => void;
+} | null>(null);
+
+export const useNotification = () => {
+  const context = useContext(NotificationContext);
+  if (!context) throw new Error('useNotification must be used within a NotificationProvider');
+  return context;
+};
+
+function NotificationProvider({ children }: { children: React.ReactNode }) {
+  const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+
+  const notify = (message: string, type: 'success' | 'error' = 'success') => {
+    setNotification({ message, type });
+    setTimeout(() => setNotification(null), 3000);
+  };
+
+  return (
+    <NotificationContext.Provider value={{ notify }}>
+      {children}
+      <AnimatePresence>
+        {notification && (
+          <motion.div
+            initial={{ opacity: 0, y: 50 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 50 }}
+            className={`fixed bottom-8 right-8 p-4 rounded-sm border shadow-2xl z-50 ${
+              notification.type === 'success' ? 'bg-emerald-900/90 border-emerald-500 text-emerald-100' : 'bg-red-900/90 border-red-500 text-red-100'
+            }`}
+          >
+            {notification.message}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </NotificationContext.Provider>
+  );
+}
+
 function BashMasterApp() {
   const [appState, setAppState] = useState<AppState>('DASHBOARD');
   const [session, setSession] = useState<SessionState>({
@@ -29,6 +69,7 @@ function BashMasterApp() {
   const [searchQuery, setSearchQuery] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { notify } = useNotification();
 
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -57,6 +98,7 @@ function BashMasterApp() {
       }));
       setAppState('PRACTICE');
       setUserInput('');
+      notify(`Started challenge for ${commandId}`);
     } catch (err) {
       setError("The teacher is currently unavailable. Please try again.");
       setAppState('DASHBOARD');
@@ -84,6 +126,11 @@ function BashMasterApp() {
         }]
       }));
       setAppState('FEEDBACK');
+      if (result.correct) {
+        notify('Correct solution!', 'success');
+      } else {
+        notify('Try again', 'error');
+      }
     } catch (err) {
       setError("Grading failed. Please try again.");
       setAppState('PRACTICE');
@@ -380,9 +427,13 @@ function BashMasterApp() {
 
 export default function App() {
   return (
-    <Routes>
-      <Route path="/bash-scripting-trainer" element={<BashMasterApp />} />
-      <Route path="*" element={<Navigate to="/bash-scripting-trainer" replace />} />
-    </Routes>
+    <NotificationProvider>
+      <BrowserRouter>
+        <Routes>
+          <Route path="/bash-scripting-trainer/*" element={<BashMasterApp />} />
+          <Route path="*" element={<Navigate to="/bash-scripting-trainer/" replace />} />
+        </Routes>
+      </BrowserRouter>
+    </NotificationProvider>
   );
 }
