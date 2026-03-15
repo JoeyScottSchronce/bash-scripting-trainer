@@ -1,20 +1,35 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# BashMaster AI Deployment Guide
 
-# Run and deploy your AI Studio app
+This project is prepared for deployment using Docker and GitHub Actions.
 
-This contains everything you need to run your app locally.
+## Prerequisites
 
-View your app in AI Studio: https://ai.studio/apps/0ee07f5b-7335-4fcb-9cd5-fc2631ea1e16
+1. A GitHub repository for this project.
+2. A Gemini API Key from [Google AI Studio](https://aistudio.google.com/app/apikey).
 
-## Run Locally
+## GitHub Actions Configuration
 
-**Prerequisites:**  Node.js
+### 1. Set up Secrets
+To allow the build to include your API key (if you want it baked into the static build), or to use it in other ways, add it to your GitHub Repository Secrets:
+- Go to **Settings > Secrets and variables > Actions**.
+- Click **New repository secret**.
+- Name: `GEMINI_API_KEY`
+- Value: `your_actual_api_key_here`
 
+### 2. Docker Deployment
+The included `Dockerfile` builds the application and serves it using Nginx. You can use the `docker-image.yml` workflow to build the image automatically on every push to `main`.
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+To deploy this image to a service like Google Cloud Run, AWS App Runner, or a VPS:
+1. Update the GitHub Action to push to a container registry (like Docker Hub or GitHub Container Registry).
+2. Configure your hosting service to pull the new image.
+
+## Local Docker Build
+
+To test the Docker build locally:
+
+```bash
+docker build -t bashmaster-ai .
+docker run -p 8080:80 bashmaster-ai
+```
+
+The app will be available at `http://localhost:8080`.
