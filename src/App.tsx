@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import { Routes, Route, Navigate } from 'react-router-dom';
 import { 
   Terminal, 
   ChevronRight, 
@@ -16,7 +17,7 @@ import { COMMAND_LIST, APP_THEME } from './constants';
 import { AppState, Challenge, GradingResult, SessionState } from './types';
 import { generateChallenge, gradeSubmission } from './services/aiService';
 
-export default function App() {
+function BashMasterApp() {
   const [appState, setAppState] = useState<AppState>('DASHBOARD');
   const [session, setSession] = useState<SessionState>({
     selectedCommand: null,
@@ -374,5 +375,14 @@ export default function App() {
         <div>&copy; 2024 BashMaster AI — Learning Protocol Active</div>
       </footer>
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <Routes>
+      <Route path="/bash-scripting-trainer" element={<BashMasterApp />} />
+      <Route path="*" element={<Navigate to="/bash-scripting-trainer" replace />} />
+    </Routes>
   );
 }
