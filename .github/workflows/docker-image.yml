@@ -39,7 +39,7 @@ jobs:
     - name: Build static files
       run: npm run build
       env:
-        VITE_GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        VITE_GEMINI_API_KEY: ${{ secrets.VITE_GEMINI_API_KEY }}
 
     - name: Build the Docker image
       run: docker build . --file Dockerfile --tag bashmaster-ai:$(date +%s)
