@@ -199,9 +199,9 @@ export default function App() {
                   <div>
                     <h2 className="text-xl mb-2 flex items-center gap-2">
                       <CommandIcon className="w-5 h-5" />
-                      Select a Command to Master
+                      Bash Scripting Trainer
                     </h2>
-                    <p className="text-emerald-500/60 text-sm">Choose a tool to practice your one-liner skills.</p>
+                    <p className="text-emerald-500/60 text-md">Select a command to practice your skills and master Bash Scripting</p>
                   </div>
                   
                   <div className="flex flex-col sm:flex-row gap-4">
@@ -218,16 +218,16 @@ export default function App() {
                       ))}
                     </div>
 
-                    <div className="relative w-full md:w-64">
+                    <div className="relative w-full md:w-44">
                       <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none">
-                        <span className="text-emerald-500/50 text-xs">$</span>
+                        <span className="text-emerald-500/80 text-xs">$</span>
                       </div>
                       <input
                         type="text"
-                        placeholder="search_command..."
+                        placeholder="search_command"
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
-                        className="w-full bg-emerald-900/10 border border-emerald-900/30 py-2 pl-8 pr-4 text-sm focus:outline-none focus:border-emerald-500/50 placeholder:text-emerald-900/50"
+                        className="w-full bg-emerald-900/10 border border-emerald-900/30 py-2 pl-8 pr-4 text-sm focus:outline-none focus:border-emerald-500/50 placeholder:text-emerald-900"
                       />
                     </div>
                   </div>
