@@ -45,9 +45,17 @@ export default function App() {
   const inputRef = useRef<HTMLInputElement>(null);
 
   const filteredCommands = COMMAND_LIST.filter(cmd => {
-    const matchesSearch = cmd.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                         cmd.description.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesCategory = !selectedCategory || (cmd as any).category === selectedCategory;
+    const normalizedQuery = searchQuery.trim().toLowerCase();
+    const matchesSearch =
+      normalizedQuery.length === 0 ||
+      cmd.name.toLowerCase().includes(normalizedQuery) ||
+      cmd.description.toLowerCase().includes(normalizedQuery);
+
+    // Always search across *all* commands when the user types anything.
+    // Category selection only applies when the search query is empty.
+    const matchesCategory =
+      normalizedQuery.length > 0 ? true : !selectedCategory || (cmd as any).category === selectedCategory;
+
     return matchesSearch && matchesCategory;
   });
 
@@ -381,9 +389,11 @@ export default function App() {
                     {session.currentChallenge.context}
                   </p>
                 </div>
-                <div className="text-xs text-emerald-500/40">
-                  Hint: {session.currentChallenge.expectedCommandHint}
-                </div>
+                {selectedDifficulty === 'BEGINNER' && (
+                  <div className="text-xs text-emerald-500/40">
+                    Hint: {session.currentChallenge.expectedCommandHint}
+                  </div>
+                )}
               </div>
 
               {/* Mock Shell */}
