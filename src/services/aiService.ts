@@ -9,7 +9,7 @@ function cleanJsonResponse(text: string): string {
 
 export async function generateChallenge(command: string, difficulty: Difficulty = 'BEGINNER'): Promise<Challenge> {
   const response = await ai.models.generateContent({
-    model: "gemini-3-flash-preview",
+    model: "gemini-3.1-flash-lite-preview",
     contents: `Generate a Bash one-liner challenge for the command: ${command}. 
     Difficulty Level: ${difficulty}.
     Provide a description of the task and a sample input/output context if applicable.
@@ -40,7 +40,7 @@ export async function generateChallenge(command: string, difficulty: Difficulty 
 
 export async function gradeSubmission(challenge: Challenge, submission: string): Promise<GradingResult> {
   const response = await ai.models.generateContent({
-    model: "gemini-3-flash-preview",
+    model: "gemini-3.1-flash-lite-preview",
     contents: `
     Challenge Description: ${challenge.description}
     Context: ${challenge.context}
