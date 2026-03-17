@@ -7,13 +7,36 @@ function cleanJsonResponse(text: string): string {
   return text.replace(/```json\n?/, "").replace(/\n?```/, "").trim();
 }
 
-export async function generateChallenge(command: string, difficulty: Difficulty = 'BEGINNER'): Promise<Challenge> {
+type AvoidChallenge = Pick<Challenge, "description" | "context">;
+
+export async function generateChallenge(
+  command: string,
+  difficulty: Difficulty = "BEGINNER",
+  options?: {
+    avoidExactChallenges?: AvoidChallenge[];
+  }
+): Promise<Challenge> {
+  const avoidBlock =
+    options?.avoidExactChallenges && options.avoidExactChallenges.length > 0
+      ? `\n\nDo NOT repeat any of the following challenges exactly (same task/wording). Generate a different task:\n${options.avoidExactChallenges
+          .slice(0, 5)
+          .map(
+            (c, idx) =>
+              `${idx + 1}. Description: ${c.description}\n   Context: ${c.context}`
+          )
+          .join("\n")}`
+      : "";
+
   const response = await ai.models.generateContent({
     model: "gemini-3.1-flash-lite-preview",
-    contents: `Generate a Bash one-liner challenge for the command: ${command}. 
-    Difficulty Level: ${difficulty}.
-    Provide a description of the task and a sample input/output context if applicable.
-    The challenge should be solvable with a single line of bash.`,
+    contents: `Generate a Bash one-liner challenge where the target command is: ${command}.
+Difficulty Level: ${difficulty}.
+
+Requirements:
+- The challenge must be solvable with a single line of bash.
+- The target command (${command}) MUST be the primary focus/learning objective of the task.
+- Using pipes and supporting commands (e.g. cat, sort, uniq, head, tail, tr, xargs, awk, sed, cut, etc.) alongside ${command} is allowed and encouraged when it helps create a more realistic scenario and avoid repetition, so long as the target command is the primary focus.
+- Provide a description of the task and a sample input/output context if applicable.${avoidBlock}`,
     config: {
       responseMimeType: "application/json",
       responseSchema: {

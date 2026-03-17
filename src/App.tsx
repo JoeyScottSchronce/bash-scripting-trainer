@@ -24,6 +24,10 @@ import {
 import { COMMAND_LIST, COMMAND_CATEGORIES, APP_THEME } from './constants';
 import { AppState, Challenge, GradingResult, SessionState, Difficulty } from './types';
 import { generateChallenge, gradeSubmission } from './services/aiService';
+import { makeCommandDifficultyKey, fingerprintChallenge } from './utils/challengeFingerprint';
+
+const MAX_GENERATION_RETRIES = 3;
+const MAX_RECENT_CHALLENGES_TO_AVOID = 5;
 
 export default function App() {
   const [appState, setAppState] = useState<AppState>('DASHBOARD');
@@ -32,6 +36,8 @@ export default function App() {
     currentChallenge: null,
     lastResult: null,
     history: [],
+    recentChallengesByKey: {},
+    seenChallengeFingerprintsByKey: {},
   });
   const [userInput, setUserInput] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
@@ -65,17 +71,49 @@ export default function App() {
     }
   }, [appState]);
 
+  const generateNonRepeatingChallenge = async (commandId: string) => {
+    const key = makeCommandDifficultyKey(commandId, selectedDifficulty);
+    const avoidExactChallenges = (session.recentChallengesByKey[key] ?? []).slice(-MAX_RECENT_CHALLENGES_TO_AVOID);
+    const seen = new Set(session.seenChallengeFingerprintsByKey[key] ?? []);
+
+    let lastChallenge: Challenge | null = null;
+    for (let attempt = 0; attempt < MAX_GENERATION_RETRIES; attempt++) {
+      const challenge = await generateChallenge(commandId, selectedDifficulty, { avoidExactChallenges });
+      lastChallenge = challenge;
+      const fp = fingerprintChallenge(challenge);
+      if (!seen.has(fp)) return challenge;
+    }
+
+    // Fallback: return whatever we got last, even if it repeats.
+    return lastChallenge ?? generateChallenge(commandId, selectedDifficulty, { avoidExactChallenges });
+  };
+
   const handleSelectCommand = async (commandId: string) => {
     setIsLoading(true);
     setAppState('LOADING_CHALLENGE');
     setError(null);
     try {
-      const challenge = await generateChallenge(commandId, selectedDifficulty);
+      const challenge = await generateNonRepeatingChallenge(commandId);
       setSession(prev => ({
         ...prev,
         selectedCommand: commandId,
         currentChallenge: challenge,
         lastResult: null,
+        recentChallengesByKey: (() => {
+          const key = makeCommandDifficultyKey(commandId, selectedDifficulty);
+          const existing = prev.recentChallengesByKey[key] ?? [];
+          const next = [...existing, { description: challenge.description, context: challenge.context }];
+          return { ...prev.recentChallengesByKey, [key]: next.slice(-MAX_RECENT_CHALLENGES_TO_AVOID) };
+        })(),
+        seenChallengeFingerprintsByKey: (() => {
+          const key = makeCommandDifficultyKey(commandId, selectedDifficulty);
+          const fp = fingerprintChallenge(challenge);
+          const existing = prev.seenChallengeFingerprintsByKey[key] ?? [];
+          return {
+            ...prev.seenChallengeFingerprintsByKey,
+            [key]: existing.includes(fp) ? existing : [...existing, fp],
+          };
+        })(),
       }));
       setAppState('PRACTICE');
       setUserInput('');
@@ -136,11 +174,26 @@ export default function App() {
     setIsLoading(true);
     setAppState('LOADING_CHALLENGE');
     try {
-      const challenge = await generateChallenge(session.selectedCommand, selectedDifficulty);
+      const challenge = await generateNonRepeatingChallenge(session.selectedCommand);
       setSession(prev => ({
         ...prev,
         currentChallenge: challenge,
         lastResult: null,
+        recentChallengesByKey: (() => {
+          const key = makeCommandDifficultyKey(prev.selectedCommand || session.selectedCommand!, selectedDifficulty);
+          const existing = prev.recentChallengesByKey[key] ?? [];
+          const next = [...existing, { description: challenge.description, context: challenge.context }];
+          return { ...prev.recentChallengesByKey, [key]: next.slice(-MAX_RECENT_CHALLENGES_TO_AVOID) };
+        })(),
+        seenChallengeFingerprintsByKey: (() => {
+          const key = makeCommandDifficultyKey(prev.selectedCommand || session.selectedCommand!, selectedDifficulty);
+          const fp = fingerprintChallenge(challenge);
+          const existing = prev.seenChallengeFingerprintsByKey[key] ?? [];
+          return {
+            ...prev.seenChallengeFingerprintsByKey,
+            [key]: existing.includes(fp) ? existing : [...existing, fp],
+          };
+        })(),
       }));
       setAppState('PRACTICE');
       setUserInput('');
@@ -159,6 +212,8 @@ export default function App() {
       currentChallenge: null,
       lastResult: null,
       history: [],
+      recentChallengesByKey: {},
+      seenChallengeFingerprintsByKey: {},
     });
     setUserInput('');
     setError(null);
