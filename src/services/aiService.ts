@@ -80,8 +80,10 @@ Difficulty Level: ${difficulty}.
 Requirements:
 - The challenge must be solvable with a single line of bash.
 - The target command (${command}) MUST be the primary focus/learning objective of the task.
-- Using pipes and supporting commands (e.g. cat, sort, uniq, head, tail, tr, xargs, awk, sed, cut, etc.) alongside ${command} is allowed and encouraged when it helps create a more realistic scenario and avoid repetition, so long as the target command is the primary focus.
-- Provide a description of the task and a sample input/output context if applicable.${avoidBlock}`,
+- Using pipes and supporting commands (e.g. cat, sort, uniq, head, tail, tr, xargs, awk, sed, cut, etc.) alongside ${command} is allowed and encouraged when it helps create a more realistic scenario and avoids repetition, so long as the target command is the primary focus.
+- Provide a description of the task and a sample input/output context if applicable.
+- Also provide a canonical expected command one-liner that correctly solves the exact generated scenario.
+- The canonical expected command must be specific to the generated context and keep ${command} as the primary learning objective.${avoidBlock}`,
     config: {
       responseMimeType: "application/json",
       responseSchema: {
@@ -89,10 +91,11 @@ Requirements:
         properties: {
           description: { type: Type.STRING, description: "Clear description of what the user needs to do." },
           context: { type: Type.STRING, description: "Sample input or environment context (e.g. 'You have a file named data.txt with...') " },
+          expectedCommand: { type: Type.STRING, description: "Canonical expected one-liner solution for the generated challenge context." },
           expectedCommandHint: { type: Type.STRING, description: "A small generic hint about the command structure without providing the answer to the question (e.g. Use 'command -flags file_name', not 'cut -f 4,5,7-9 spreadsheet.ods'.)." },
           difficulty: { type: Type.STRING, enum: ["BEGINNER", "INTERMEDIATE", "ADVANCED"] }
         },
-        required: ["description", "context", "expectedCommandHint", "difficulty"]
+        required: ["description", "context", "expectedCommand", "expectedCommandHint", "difficulty"]
       },
       systemInstruction: "You are an expert Bash scripting tutor. You generate concise, educational one-liner challenges for specific Linux commands. Focus on practical, real-world scenarios."
     }
@@ -152,13 +155,17 @@ export async function evaluateProgress(
     contents: `
 Challenge Description: ${challenge.description}
 Context: ${challenge.context}
+Canonical Expected Command: ${challenge.expectedCommand}
 User Submission:
 ${submission}
 
 Evaluate the user's progress toward a correct Bash one-liner solution.
 You MUST NOT provide a full solution, a full command, step-by-step solving instructions, or any code/command blocks.
 You MUST NOT use backticks.
+Use the canonical expected command only as hidden grading guidance to keep feedback on-topic for this scenario.
+Hints must stay aligned to the expected approach for this challenge and avoid drifting into unrelated techniques.
 Only point out what is incorrect/missing and provide concept-level hints (flags/ideas to consider).
+If the user's submission is a valid equivalent alternative, mark it correct.
 If the user's submission is fully correct, set correct=true. In that case:
 - summary should say it's correct and suggest the user submit
 - issues MUST be an empty array
@@ -189,7 +196,7 @@ If the user's submission is fully correct, set correct=true. In that case:
         required: ["correct", "summary", "issues", "hints", "confidence"],
       },
       systemInstruction:
-        "You are an expert Bash tutor. You only evaluate progress and provide hints. Never reveal a complete solution, never write full commands, never use backticks, and never give step-by-step solving instructions. Be brief, specific, and safe.",
+        "You are an expert Bash tutor. You only evaluate progress and provide hints. Keep feedback tightly aligned to the challenge requirements and canonical expected approach, but accept correct equivalent alternatives. Never reveal a complete solution, never write full commands, never use backticks, and never give step-by-step solving instructions. Be brief, specific, and safe.",
     },
   });
 

@@ -3,6 +3,7 @@ export type Difficulty = 'BEGINNER' | 'INTERMEDIATE' | 'ADVANCED';
 export interface Challenge {
   description: string;
   context: string;
+  expectedCommand: string;
   expectedCommandHint: string;
   difficulty: Difficulty;
 }
