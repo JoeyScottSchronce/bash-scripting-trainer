@@ -21,7 +21,7 @@ import {
   Copy,
   Check
 } from 'lucide-react';
-import { COMMAND_LIST, COMMAND_CATEGORIES, APP_THEME } from './constants';
+import { COMMAND_LIST, COMMAND_CATEGORY_GROUPS, APP_THEME } from './constants';
 import { AppState, Challenge, GradingResult, SessionState, Difficulty, ProgressEvaluationResult } from './types';
 import { evaluateProgress, generateChallenge, gradeSubmission } from './services/aiService';
 import { makeCommandDifficultyKey, fingerprintChallenge } from './utils/challengeFingerprint';
@@ -55,6 +55,12 @@ export default function App() {
 
   const inputRef = useRef<HTMLInputElement>(null);
 
+  const groupIncludesCategory = (groupId: string, category: string) => {
+    const group = COMMAND_CATEGORY_GROUPS.find(g => g.id === groupId);
+    if (!group) return false;
+    return (group.categories as readonly string[]).includes(category);
+  };
+
   const filteredCommands = COMMAND_LIST.filter(cmd => {
     const normalizedQuery = searchQuery.trim().toLowerCase();
     const matchesSearch =
@@ -64,8 +70,11 @@ export default function App() {
 
     // Always search across *all* commands when the user types anything.
     // Category selection only applies when the search query is empty.
-    const matchesCategory =
-      normalizedQuery.length > 0 ? true : !selectedCategory || (cmd as any).category === selectedCategory;
+    const matchesCategory = (() => {
+      if (normalizedQuery.length > 0) return true;
+      if (!selectedCategory) return true;
+      return groupIncludesCategory(selectedCategory, cmd.category);
+    })();
 
     return matchesSearch && matchesCategory;
   });
@@ -400,6 +409,16 @@ export default function App() {
                   >
                     All Commands
                   </button>
+                  {COMMAND_CATEGORY_GROUPS.map((group) => (
+                    <button
+                      key={group.id}
+                      onClick={() => setSelectedCategory(group.id)}
+                      className={`flex items-center gap-2 px-4 py-2 text-xs font-bold uppercase tracking-widest border transition-all ${selectedCategory === group.id ? 'bg-emerald-500 text-black border-emerald-500' : 'border-emerald-900/30 text-emerald-500/60 hover:border-emerald-500/50'}`}
+                    >
+                      {getCategoryIcon(group.icon)}
+                      {group.name}
+                    </button>
+                  ))}
                   <button
                     onClick={handleTrainersChoice}
                     disabled={isLoading}
@@ -412,16 +431,6 @@ export default function App() {
                     <Cpu className="w-4 h-4" />
                     Trainer's Choice
                   </button>
-                  {COMMAND_CATEGORIES.map((cat) => (
-                    <button
-                      key={cat.id}
-                      onClick={() => setSelectedCategory(cat.id)}
-                      className={`flex items-center gap-2 px-4 py-2 text-xs font-bold uppercase tracking-widest border transition-all ${selectedCategory === cat.id ? 'bg-emerald-500 text-black border-emerald-500' : 'border-emerald-900/30 text-emerald-500/60 hover:border-emerald-500/50'}`}
-                    >
-                      {getCategoryIcon(cat.icon)}
-                      {cat.name}
-                    </button>
-                  ))}
                 </div>
               </div>
 

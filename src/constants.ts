@@ -1,13 +1,19 @@
 export const COMMAND_CATEGORIES = [
-  { id: 'text', name: 'Text Processing', icon: 'FileText' },
-  { id: 'file', name: 'File Management', icon: 'Folder' },
-  { id: 'system', name: 'System & Process', icon: 'Cpu' },
-  { id: 'network', name: 'Networking', icon: 'Globe' },
+  { id: 'text', name: 'Text', icon: 'FileText' },
+  { id: 'file', name: 'Files', icon: 'Folder' },
+  { id: 'system', name: 'System', icon: 'Cpu' },
+  { id: 'network', name: 'Network', icon: 'Globe' },
   { id: 'utility', name: 'Utilities', icon: 'Wrench' },
 ];
 
+export const COMMAND_CATEGORY_GROUPS = [
+  { id: 'data', name: 'Data Processing', icon: 'FileText', categories: ['text'] as const },
+  { id: 'system_files', name: 'Files/System', icon: 'Folder', categories: ['system', 'file'] as const },
+  { id: 'net_utils', name: 'Network/Utils', icon: 'Globe', categories: ['network', 'utility'] as const },
+] as const;
+
 export const COMMAND_LIST = [
-  // Text Processing
+  // Text
   { id: 'grep', name: 'grep', description: 'Search for patterns in text', category: 'text' },
   { id: 'sed', name: 'sed', description: 'Stream editor for filtering and transforming text', category: 'text' },
   { id: 'awk', name: 'awk', description: 'Pattern scanning and processing language', category: 'text' },
@@ -36,7 +42,7 @@ export const COMMAND_LIST = [
   { id: 'hexdump', name: 'hexdump', description: 'Display file contents in hexadecimal, decimal, octal, or ascii', category: 'text' },
   { id: 'strings', name: 'strings', description: 'Print the sequences of printable characters in files', category: 'text' },
   
-  // File Management
+  // Files
   { id: 'find', name: 'find', description: 'Search for files in a directory', category: 'file' },
   { id: 'ls', name: 'ls', description: 'List directory contents', category: 'file' },
   { id: 'cat', name: 'cat', description: 'Concatenate and print files', category: 'file' },
@@ -67,7 +73,7 @@ export const COMMAND_LIST = [
   { id: 'shred', name: 'shred', description: 'Overwrite a file to hide its contents, and optionally delete it', category: 'file' },
   { id: 'truncate', name: 'truncate', description: 'Shrink or extend the size of a file to the specified size', category: 'file' },
   
-  // System & Process
+  // System
   { id: 'ps', name: 'ps', description: 'Report current processes', category: 'system' },
   { id: 'top', name: 'top', description: 'Display Linux processes', category: 'system' },
   { id: 'kill', name: 'kill', description: 'Send a signal to a process', category: 'system' },
@@ -100,7 +106,7 @@ export const COMMAND_LIST = [
   { id: 'expr', name: 'expr', description: 'Evaluate expressions', category: 'system' },
   { id: 'seq', name: 'seq', description: 'Print a sequence of numbers', category: 'system' },
   
-  // Networking
+  // Network
   { id: 'curl', name: 'curl', description: 'Transfer data from or to a server', category: 'network' },
   { id: 'ssh', name: 'ssh', description: 'OpenSSH SSH client', category: 'network' },
   { id: 'scp', name: 'scp', description: 'Secure copy (remote file copy)', category: 'network' },
