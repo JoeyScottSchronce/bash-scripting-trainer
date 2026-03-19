@@ -1,10 +1,55 @@
 import { GoogleGenAI, Type } from "@google/genai";
-import { Challenge, GradingResult, Difficulty } from "../types";
+import { Challenge, GradingResult, Difficulty, ProgressEvaluationResult } from "../types";
 
 const ai = new GoogleGenAI({apiKey: import.meta.env.VITE_GEMINI_API_KEY || ""});
 
 function cleanJsonResponse(text: string): string {
   return text.replace(/```json\n?/, "").replace(/\n?```/, "").trim();
+}
+
+function looksLikeCodeOrSolution(text: string): boolean {
+  // Block fenced code, inline code, and common full-command patterns.
+  if (/```/m.test(text)) return true;
+  if (/`[^`]+`/m.test(text)) return true;
+  // Heuristic: lines that look like full shell commands with pipes/redirects/flags.
+  if (/^\s*\$?\s*\w[\w-]*(\s+-{1,2}[\w-]+|\s+\S+)+(?:\s*[|>]\s*\S+)+/m.test(text)) return true;
+  if (/^\s*\$?\s*\w[\w-]*\s+-{1,2}[\w-]+/m.test(text)) return true;
+  return false;
+}
+
+function sanitizeProgressEvaluation(result: ProgressEvaluationResult): ProgressEvaluationResult {
+  const combined = [result.summary, ...(result.issues ?? []), ...(result.hints ?? [])].join("\n");
+
+  if (looksLikeCodeOrSolution(combined)) {
+    return {
+      correct: false,
+      summary:
+        "I can’t show a full command or a complete solution here, but I can still help you spot what to improve.",
+      issues: [
+        "Your current attempt is missing one or more key pieces required by the prompt (or has a logical mismatch).",
+      ],
+      hints: [
+        "Re-read the challenge and verify the output requirement matches exactly.",
+        "Check whether you need a specific flag, a regex/pattern, or correct input source (file vs stdin).",
+        "If the command supports it, consider whether piping a helper tool into/out of it is needed—but keep the target command as the primary focus.",
+      ],
+      confidence: "LOW",
+    };
+  }
+
+  if (result.correct) {
+    return {
+      ...result,
+      summary:
+        result.summary?.trim().length > 0
+          ? result.summary
+          : "Your command looks correct. Go ahead and submit it.",
+      issues: [],
+      hints: [],
+    };
+  }
+
+  return result;
 }
 
 type AvoidChallenge = Pick<Challenge, "description" | "context">;
@@ -93,5 +138,70 @@ export async function gradeSubmission(challenge: Challenge, submission: string):
     return JSON.parse(cleanedText) as GradingResult;
   } catch (e) {
     throw new Error("Failed to parse AI response for grading.");
+  }
+}
+
+export async function evaluateProgress(
+  challenge: Challenge,
+  submission: string,
+  options?: { compactWhenCorrect?: boolean }
+): Promise<ProgressEvaluationResult> {
+  const compactWhenCorrect = options?.compactWhenCorrect ?? true;
+  const response = await ai.models.generateContent({
+    model: "gemini-3.1-flash-lite-preview",
+    contents: `
+Challenge Description: ${challenge.description}
+Context: ${challenge.context}
+User Submission:
+${submission}
+
+Evaluate the user's progress toward a correct Bash one-liner solution.
+You MUST NOT provide a full solution, a full command, step-by-step solving instructions, or any code/command blocks.
+You MUST NOT use backticks.
+Only point out what is incorrect/missing and provide concept-level hints (flags/ideas to consider).
+If the user's submission is fully correct, set correct=true. In that case:
+- summary should say it's correct and suggest the user submit
+- issues MUST be an empty array
+- hints MUST be an empty array
+`,
+    config: {
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          correct: { type: Type.BOOLEAN },
+          summary: {
+            type: Type.STRING,
+            description: "1–3 sentences describing current progress and the biggest gap (no commands).",
+          },
+          issues: {
+            type: Type.ARRAY,
+            items: { type: Type.STRING },
+            description: "Concrete problems with the current attempt (no commands; no full solution).",
+          },
+          hints: {
+            type: Type.ARRAY,
+            items: { type: Type.STRING },
+            description: "Concept-level hints: what to think about (no commands).",
+          },
+          confidence: { type: Type.STRING, enum: ["LOW", "MEDIUM", "HIGH"] },
+        },
+        required: ["correct", "summary", "issues", "hints", "confidence"],
+      },
+      systemInstruction:
+        "You are an expert Bash tutor. You only evaluate progress and provide hints. Never reveal a complete solution, never write full commands, never use backticks, and never give step-by-step solving instructions. Be brief, specific, and safe.",
+    },
+  });
+
+  try {
+    const cleanedText = cleanJsonResponse(response.text || "{}");
+    const parsed = JSON.parse(cleanedText) as ProgressEvaluationResult;
+    const sanitized = sanitizeProgressEvaluation(parsed);
+    if (compactWhenCorrect && sanitized.correct) {
+      return { ...sanitized, issues: [], hints: [] };
+    }
+    return sanitized;
+  } catch (e) {
+    throw new Error("Failed to parse AI response for progress evaluation.");
   }
 }

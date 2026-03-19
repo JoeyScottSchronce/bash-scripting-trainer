@@ -13,11 +13,20 @@ export interface GradingResult {
   solution: string;
 }
 
+export interface ProgressEvaluationResult {
+  correct: boolean;
+  summary: string;
+  issues: string[];
+  hints: string[];
+  confidence: 'LOW' | 'MEDIUM' | 'HIGH';
+}
+
 export type AppState = 'DASHBOARD' | 'LOADING_CHALLENGE' | 'PRACTICE' | 'GRADING' | 'FEEDBACK';
 
 export type CommandDifficultyKey = `${string}|${Difficulty}`;
 
 export interface SessionState {
+  trainerMode: boolean;
   selectedCommand: string | null;
   currentChallenge: Challenge | null;
   lastResult: GradingResult | null;

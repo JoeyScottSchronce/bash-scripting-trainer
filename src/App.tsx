@@ -22,8 +22,8 @@ import {
   Check
 } from 'lucide-react';
 import { COMMAND_LIST, COMMAND_CATEGORIES, APP_THEME } from './constants';
-import { AppState, Challenge, GradingResult, SessionState, Difficulty } from './types';
-import { generateChallenge, gradeSubmission } from './services/aiService';
+import { AppState, Challenge, GradingResult, SessionState, Difficulty, ProgressEvaluationResult } from './types';
+import { evaluateProgress, generateChallenge, gradeSubmission } from './services/aiService';
 import { makeCommandDifficultyKey, fingerprintChallenge } from './utils/challengeFingerprint';
 
 const MAX_GENERATION_RETRIES = 3;
@@ -32,6 +32,7 @@ const MAX_RECENT_CHALLENGES_TO_AVOID = 5;
 export default function App() {
   const [appState, setAppState] = useState<AppState>('DASHBOARD');
   const [session, setSession] = useState<SessionState>({
+    trainerMode: false,
     selectedCommand: null,
     currentChallenge: null,
     lastResult: null,
@@ -44,9 +45,13 @@ export default function App() {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [selectedDifficulty, setSelectedDifficulty] = useState<Difficulty>('BEGINNER');
   const [isLoading, setIsLoading] = useState(false);
+  const [isRunLoading, setIsRunLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showHelp, setShowHelp] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [runFeedback, setRunFeedback] = useState<ProgressEvaluationResult | null>(null);
+  const [runError, setRunError] = useState<string | null>(null);
+  const [isRunFeedbackOpen, setIsRunFeedbackOpen] = useState(false);
 
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -88,6 +93,62 @@ export default function App() {
     return lastChallenge ?? generateChallenge(commandId, selectedDifficulty, { avoidExactChallenges });
   };
 
+  const pickRandomCommandId = () => {
+    if (COMMAND_LIST.length === 0) return null;
+    const index = Math.floor(Math.random() * COMMAND_LIST.length);
+    return COMMAND_LIST[index].id;
+  };
+
+  const startTrainerChoiceSession = async () => {
+    const commandId = pickRandomCommandId();
+    if (!commandId) {
+      throw new Error("No commands available for Trainer's Choice.");
+    }
+
+    const challenge = await generateNonRepeatingChallenge(commandId);
+    setSession(prev => ({
+      ...prev,
+      trainerMode: true,
+      selectedCommand: commandId,
+      currentChallenge: challenge,
+      lastResult: null,
+      recentChallengesByKey: (() => {
+        const key = makeCommandDifficultyKey(commandId, selectedDifficulty);
+        const existing = prev.recentChallengesByKey[key] ?? [];
+        const next = [...existing, { description: challenge.description, context: challenge.context }];
+        return { ...prev.recentChallengesByKey, [key]: next.slice(-MAX_RECENT_CHALLENGES_TO_AVOID) };
+      })(),
+      seenChallengeFingerprintsByKey: (() => {
+        const key = makeCommandDifficultyKey(commandId, selectedDifficulty);
+        const fp = fingerprintChallenge(challenge);
+        const existing = prev.seenChallengeFingerprintsByKey[key] ?? [];
+        return {
+          ...prev.seenChallengeFingerprintsByKey,
+          [key]: existing.includes(fp) ? existing : [...existing, fp],
+        };
+      })(),
+    }));
+  };
+
+  const handleTrainersChoice = async () => {
+    setIsLoading(true);
+    setAppState('LOADING_CHALLENGE');
+    setError(null);
+    setSelectedCategory(null);
+    setSearchQuery('');
+    try {
+      await startTrainerChoiceSession();
+      setAppState('PRACTICE');
+      setUserInput('');
+    } catch (err) {
+      setError("Trainer's Choice is currently unavailable. Please try again.");
+      setAppState('DASHBOARD');
+      console.error(err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const handleSelectCommand = async (commandId: string) => {
     setIsLoading(true);
     setAppState('LOADING_CHALLENGE');
@@ -96,6 +157,7 @@ export default function App() {
       const challenge = await generateNonRepeatingChallenge(commandId);
       setSession(prev => ({
         ...prev,
+        trainerMode: false,
         selectedCommand: commandId,
         currentChallenge: challenge,
         lastResult: null,
@@ -144,7 +206,7 @@ export default function App() {
 
   const handleSubmit = async (e?: React.FormEvent) => {
     e?.preventDefault();
-    if (!userInput.trim() || !session.currentChallenge || isLoading) return;
+    if (!userInput.trim() || !session.currentChallenge || isLoading || isRunLoading) return;
 
     setIsLoading(true);
     setAppState('GRADING');
@@ -169,24 +231,57 @@ export default function App() {
     }
   };
 
+  const closeRunPopup = () => {
+    setIsRunFeedbackOpen(false);
+  };
+
+  const handleRun = async () => {
+    if (!userInput.trim() || !session.currentChallenge || isLoading || isRunLoading) return;
+
+    setIsRunLoading(true);
+    setRunError(null);
+    try {
+      const result = await evaluateProgress(session.currentChallenge, userInput);
+      setRunFeedback(result);
+      setIsRunFeedbackOpen(true);
+    } catch (err) {
+      setRunError("Run failed. Please try again.");
+      setIsRunFeedbackOpen(true);
+      console.error(err);
+    } finally {
+      setIsRunLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!isRunFeedbackOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') closeRunPopup();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [isRunFeedbackOpen]);
+
   const handleNextChallenge = async () => {
-    if (!session.selectedCommand) return;
+    const baseCommandId = session.trainerMode ? pickRandomCommandId() : session.selectedCommand;
+    if (!baseCommandId) return;
     setIsLoading(true);
     setAppState('LOADING_CHALLENGE');
     try {
-      const challenge = await generateNonRepeatingChallenge(session.selectedCommand);
+      const challenge = await generateNonRepeatingChallenge(baseCommandId);
       setSession(prev => ({
         ...prev,
+        selectedCommand: baseCommandId,
         currentChallenge: challenge,
         lastResult: null,
         recentChallengesByKey: (() => {
-          const key = makeCommandDifficultyKey(prev.selectedCommand || session.selectedCommand!, selectedDifficulty);
+          const key = makeCommandDifficultyKey(baseCommandId, selectedDifficulty);
           const existing = prev.recentChallengesByKey[key] ?? [];
           const next = [...existing, { description: challenge.description, context: challenge.context }];
           return { ...prev.recentChallengesByKey, [key]: next.slice(-MAX_RECENT_CHALLENGES_TO_AVOID) };
         })(),
         seenChallengeFingerprintsByKey: (() => {
-          const key = makeCommandDifficultyKey(prev.selectedCommand || session.selectedCommand!, selectedDifficulty);
+          const key = makeCommandDifficultyKey(baseCommandId, selectedDifficulty);
           const fp = fingerprintChallenge(challenge);
           const existing = prev.seenChallengeFingerprintsByKey[key] ?? [];
           return {
@@ -208,6 +303,7 @@ export default function App() {
   const handleQuit = () => {
     setAppState('DASHBOARD');
     setSession({
+      trainerMode: false,
       selectedCommand: null,
       currentChallenge: null,
       lastResult: null,
@@ -303,6 +399,18 @@ export default function App() {
                     className={`flex items-center gap-2 px-4 py-2 text-xs font-bold uppercase tracking-widest border transition-all ${!selectedCategory ? 'bg-emerald-500 text-black border-emerald-500' : 'border-emerald-900/30 text-emerald-500/60 hover:border-emerald-500/50'}`}
                   >
                     All Commands
+                  </button>
+                  <button
+                    onClick={handleTrainersChoice}
+                    disabled={isLoading}
+                    className={`flex items-center gap-2 px-4 py-2 text-xs font-bold uppercase tracking-widest border ring-2 ring-emerald-400/80 ring-offset-0 transition-all ${
+                      session.trainerMode
+                        ? 'bg-amber-500 text-black border-amber-500'
+                        : 'border-emerald-900/30 text-emerald-500/60 hover:text-emerald-400 hover:border-emerald-500/50'
+                    }`}
+                  >
+                    <Cpu className="w-4 h-4" />
+                    Trainer's Choice
                   </button>
                   {COMMAND_CATEGORIES.map((cat) => (
                     <button
@@ -426,7 +534,7 @@ export default function App() {
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center gap-2 text-xs text-emerald-500/50 uppercase tracking-widest">
                     <Info className="w-4 h-4" />
-                    Challenge: {session.selectedCommand}
+                    Challenge: {session.trainerMode ? "Trainer's Choice" : session.selectedCommand}
                   </div>
                   <div className={`px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest border ${
                     session.currentChallenge.difficulty === 'BEGINNER' ? 'border-emerald-500/50 text-emerald-500' :
@@ -488,14 +596,28 @@ export default function App() {
                     </div>
                   </div>
                   
-                  <div className="mt-auto pt-8 flex justify-end">
+                  <div className="mt-auto pt-8 flex justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={handleRun}
+                      disabled={!userInput.trim() || appState === 'GRADING' || isLoading || isRunLoading}
+                      className="flex items-center gap-2 px-3 py-2 bg-emerald-900/20 border border-emerald-900/40 text-white font-bold hover:bg-emerald-900/30 hover:border-emerald-500/40 disabled:opacity-50 transition-colors uppercase text-xs tracking-widest"
+                      title="Run progress check (hints only)"
+                    >
+                      {isRunLoading ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Info className="w-4 h-4" />
+                      )}
+                      Run
+                    </button>
                     <button
                       type="submit"
                       disabled={!userInput.trim() || appState === 'GRADING'}
                       className="flex items-center gap-2 px-6 py-2 bg-emerald-500 text-black font-bold hover:bg-emerald-400 disabled:opacity-50 disabled:hover:bg-emerald-500 transition-colors uppercase text-sm tracking-tighter"
                     >
                       <Play className="w-4 h-4 fill-current" />
-                      Execute & Grade
+                      Submit
                     </button>
                   </div>
                 </form>
@@ -573,6 +695,94 @@ export default function App() {
           </div>
         )}
       </main>
+
+      {/* Run Feedback Popup */}
+      <AnimatePresence>
+        {isRunFeedbackOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm"
+            onClick={closeRunPopup}
+          >
+            <motion.div
+              initial={{ scale: 0.96, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.96, opacity: 0 }}
+              className="w-full max-w-xl bg-[#0a0a0a] border border-emerald-900/50 p-6 md:p-8 relative"
+              onClick={(e) => e.stopPropagation()}
+              role="dialog"
+              aria-modal="true"
+              aria-label="Run feedback"
+            >
+              <button
+                onClick={closeRunPopup}
+                className="absolute top-4 right-4 text-emerald-500/50 hover:text-emerald-500 transition-colors"
+                aria-label="Close run feedback"
+              >
+                <X className="w-5 h-5" />
+              </button>
+
+              <h3 className="text-lg md:text-xl font-bold mb-4 flex items-center gap-3 uppercase tracking-tighter text-white">
+                <Info className="w-5 h-5 text-emerald-500" />
+                Progress Check
+              </h3>
+
+              {runError ? (
+                <div className="p-4 border border-red-500/30 bg-red-500/5 text-red-400 text-sm flex items-center gap-3">
+                  <XCircle className="w-5 h-5" />
+                  {runError}
+                </div>
+              ) : runFeedback ? (
+                <div className="space-y-5 text-sm leading-relaxed text-white/80">
+                  <div className="border border-emerald-900/30 bg-emerald-900/10 p-4">
+                    <div className="text-[10px] uppercase tracking-widest text-emerald-500/60 mb-2">
+                      Summary · Confidence: {runFeedback.confidence}
+                    </div>
+                    <div>{runFeedback.summary}</div>
+                  </div>
+
+                  {!runFeedback.correct && runFeedback.issues.length > 0 && (
+                    <div>
+                      <div className="text-[10px] uppercase tracking-widest text-emerald-500/60 mb-2">
+                        What’s currently wrong / missing
+                      </div>
+                      <ul className="list-disc list-inside space-y-1">
+                        {runFeedback.issues.map((item, idx) => (
+                          <li key={idx}>{item}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {!runFeedback.correct && runFeedback.hints.length > 0 && (
+                    <div>
+                      <div className="text-[10px] uppercase tracking-widest text-emerald-500/60 mb-2">
+                        Hints (no solutions)
+                      </div>
+                      <ul className="list-disc list-inside space-y-1">
+                        {runFeedback.hints.map((item, idx) => (
+                          <li key={idx}>{item}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  <div className="text-[10px] uppercase tracking-widest text-emerald-500/40">
+                    Tip: close this popup (Esc, click outside, or the X) and keep iterating.
+                  </div>
+                </div>
+              ) : (
+                <div className="text-emerald-500/60 text-sm flex items-center gap-3">
+                  <Loader2 className="w-5 h-5 animate-spin text-emerald-500" />
+                  Loading…
+                </div>
+              )}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Help Modal */}
       <AnimatePresence>
