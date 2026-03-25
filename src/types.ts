@@ -22,6 +22,16 @@ export interface ProgressEvaluationResult {
   confidence: 'LOW' | 'MEDIUM' | 'HIGH';
 }
 
+/** Raw unified model output for Run + Submit (mapped to GradingResult / ProgressEvaluationResult). */
+export interface CanonicalEvaluationPayload {
+  correct: boolean;
+  feedback: string;
+  summary: string;
+  issues: string[];
+  hints: string[];
+  confidence: 'LOW' | 'MEDIUM' | 'HIGH';
+}
+
 export type AppState = 'DASHBOARD' | 'LOADING_CHALLENGE' | 'PRACTICE' | 'GRADING' | 'FEEDBACK';
 
 export type CommandDifficultyKey = `${string}|${Difficulty}`;

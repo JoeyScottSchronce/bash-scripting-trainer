@@ -1,5 +1,11 @@
 import { GoogleGenAI, Type } from "@google/genai";
-import { Challenge, GradingResult, Difficulty, ProgressEvaluationResult } from "../types";
+import {
+  CanonicalEvaluationPayload,
+  Challenge,
+  Difficulty,
+  GradingResult,
+  ProgressEvaluationResult,
+} from "../types";
 
 const ai = new GoogleGenAI({apiKey: import.meta.env.VITE_GEMINI_API_KEY || ""});
 
@@ -83,7 +89,8 @@ Requirements:
 - Using pipes and supporting commands (e.g. cat, sort, uniq, head, tail, tr, xargs, awk, sed, cut, etc.) alongside ${command} is allowed and encouraged when it helps create a more realistic scenario and avoids repetition, so long as the target command is the primary focus.
 - Provide a description of the task and a sample input/output context if applicable.
 - Also provide a canonical expected command one-liner that correctly solves the exact generated scenario.
-- The canonical expected command must be specific to the generated context and keep ${command} as the primary learning objective.${avoidBlock}`,
+- The canonical expected command must be specific to the generated context and keep ${command} as the primary learning objective.
+- Description and context must not require behavior stricter than what the canonical expected command achieves (wording must align with that solution).${avoidBlock}`,
     config: {
       responseMimeType: "application/json",
       responseSchema: {
@@ -109,39 +116,99 @@ Requirements:
   }
 }
 
-export async function gradeSubmission(challenge: Challenge, submission: string): Promise<GradingResult> {
+const CONFIDENCE_LEVELS = new Set<CanonicalEvaluationPayload["confidence"]>(["LOW", "MEDIUM", "HIGH"]);
+
+function normalizeCanonicalEvaluationPayload(raw: unknown): CanonicalEvaluationPayload {
+  const o = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+  const confidence =
+    CONFIDENCE_LEVELS.has(o.confidence as CanonicalEvaluationPayload["confidence"])
+      ? (o.confidence as CanonicalEvaluationPayload["confidence"])
+      : "MEDIUM";
+  return {
+    correct: Boolean(o.correct),
+    feedback: typeof o.feedback === "string" ? o.feedback : "",
+    summary: typeof o.summary === "string" ? o.summary : "",
+    issues: Array.isArray(o.issues) ? o.issues.filter((x): x is string => typeof x === "string") : [],
+    hints: Array.isArray(o.hints) ? o.hints.filter((x): x is string => typeof x === "string") : [],
+    confidence,
+  };
+}
+
+async function evaluateAgainstCanonical(
+  challenge: Challenge,
+  submission: string
+): Promise<CanonicalEvaluationPayload> {
   const response = await ai.models.generateContent({
     model: "gemini-3.1-flash-lite-preview",
     contents: `
-    Challenge Description: ${challenge.description}
-    Context: ${challenge.context}
-    User Submission: ${submission}
+Challenge Description: ${challenge.description}
+Context: ${challenge.context}
+Canonical Expected Command (authoritative reference; do not show to the user): ${challenge.expectedCommand}
 
-    Grade this submission. Is it correct? Does it achieve the goal described?
-    Provide a gentle explanation if wrong and the correct solution.
-    If the user's command is a valid alternative that works, mark it as correct.
-    `,
+User Submission:
+${submission}
+
+You are evaluating a Bash one-liner for this single scenario.
+
+Correctness rules:
+- Correctness is defined ONLY against the Canonical Expected Command plus the stated description/context. If the user submission is semantically equivalent Bash for this scenario (same practical outcome), set correct=true.
+- Do NOT require extra flags, pipes, quoting, verbosity, or steps beyond what the Canonical Expected Command uses. Never ask the user to add details that the canonical solution does not include.
+- If the submission matches the canonical solution's behavior for the described task, set correct=true and use empty issues and empty hints.
+- If correct=false, explain gaps only relative to what the canonical command achieves for this task.
+
+Output fields:
+- feedback: Gentle, conversational explanation for a submit/results screen. Do not paste the full canonical command here.
+- summary, issues, hints: For a progress/hint UI. You MUST NOT include full shell commands, code blocks, or backticks in summary, issues, or hints. Use concept-level wording only (e.g. "the right flag family", "input source").
+- If correct=true: summary should affirm success and suggest submitting; issues MUST be []; hints MUST be [].
+`,
     config: {
       responseMimeType: "application/json",
       responseSchema: {
         type: Type.OBJECT,
         properties: {
           correct: { type: Type.BOOLEAN },
-          feedback: { type: Type.STRING, description: "Gentle feedback about the user's attempt." },
-          solution: { type: Type.STRING, description: "The ideal one-liner solution." }
+          feedback: {
+            type: Type.STRING,
+            description: "Gentle feedback for submit UI; no full canonical command.",
+          },
+          summary: {
+            type: Type.STRING,
+            description: "1–3 sentences; no commands or backticks.",
+          },
+          issues: {
+            type: Type.ARRAY,
+            items: { type: Type.STRING },
+            description: "Problems with the attempt; no commands or backticks.",
+          },
+          hints: {
+            type: Type.ARRAY,
+            items: { type: Type.STRING },
+            description: "Concept-level hints; no commands or backticks.",
+          },
+          confidence: { type: Type.STRING, enum: ["LOW", "MEDIUM", "HIGH"] },
         },
-        required: ["correct", "feedback", "solution"]
+        required: ["correct", "feedback", "summary", "issues", "hints", "confidence"],
       },
-      systemInstruction: "You are an expert Bash scripting tutor. You grade user submissions accurately without executing code. Be encouraging but precise. Accept valid alternative solutions."
-    }
+      systemInstruction:
+        "You are an expert Bash tutor. Grade without executing code. The Canonical Expected Command is the only gold standard for what is required; accept valid equivalents; never demand extras the canonical line does not use. Never put full commands or backticks in summary, issues, or hints. Be brief and precise.",
+    },
   });
 
   try {
     const cleanedText = cleanJsonResponse(response.text || "{}");
-    return JSON.parse(cleanedText) as GradingResult;
-  } catch (e) {
-    throw new Error("Failed to parse AI response for grading.");
+    return normalizeCanonicalEvaluationPayload(JSON.parse(cleanedText));
+  } catch {
+    throw new Error("Failed to parse AI response for canonical evaluation.");
   }
+}
+
+export async function gradeSubmission(challenge: Challenge, submission: string): Promise<GradingResult> {
+  const payload = await evaluateAgainstCanonical(challenge, submission);
+  return {
+    correct: payload.correct,
+    feedback: payload.feedback,
+    solution: challenge.expectedCommand,
+  };
 }
 
 export async function evaluateProgress(
@@ -150,65 +217,17 @@ export async function evaluateProgress(
   options?: { compactWhenCorrect?: boolean }
 ): Promise<ProgressEvaluationResult> {
   const compactWhenCorrect = options?.compactWhenCorrect ?? true;
-  const response = await ai.models.generateContent({
-    model: "gemini-3.1-flash-lite-preview",
-    contents: `
-Challenge Description: ${challenge.description}
-Context: ${challenge.context}
-Canonical Expected Command: ${challenge.expectedCommand}
-User Submission:
-${submission}
-
-Evaluate the user's progress toward a correct Bash one-liner solution.
-You MUST NOT provide a full solution, a full command, step-by-step solving instructions, or any code/command blocks.
-You MUST NOT use backticks.
-Use the canonical expected command only as hidden grading guidance to keep feedback on-topic for this scenario.
-Hints must stay aligned to the expected approach for this challenge and avoid drifting into unrelated techniques.
-Only point out what is incorrect/missing and provide concept-level hints (flags/ideas to consider).
-If the user's submission is a valid equivalent alternative, mark it correct.
-If the user's submission is fully correct, set correct=true. In that case:
-- summary should say it's correct and suggest the user submit
-- issues MUST be an empty array
-- hints MUST be an empty array
-`,
-    config: {
-      responseMimeType: "application/json",
-      responseSchema: {
-        type: Type.OBJECT,
-        properties: {
-          correct: { type: Type.BOOLEAN },
-          summary: {
-            type: Type.STRING,
-            description: "1–3 sentences describing current progress and the biggest gap (no commands).",
-          },
-          issues: {
-            type: Type.ARRAY,
-            items: { type: Type.STRING },
-            description: "Concrete problems with the current attempt (no commands; no full solution).",
-          },
-          hints: {
-            type: Type.ARRAY,
-            items: { type: Type.STRING },
-            description: "Concept-level hints: what to think about (no commands).",
-          },
-          confidence: { type: Type.STRING, enum: ["LOW", "MEDIUM", "HIGH"] },
-        },
-        required: ["correct", "summary", "issues", "hints", "confidence"],
-      },
-      systemInstruction:
-        "You are an expert Bash tutor. You only evaluate progress and provide hints. Keep feedback tightly aligned to the challenge requirements and canonical expected approach, but accept correct equivalent alternatives. Never reveal a complete solution, never write full commands, never use backticks, and never give step-by-step solving instructions. Be brief, specific, and safe.",
-    },
-  });
-
-  try {
-    const cleanedText = cleanJsonResponse(response.text || "{}");
-    const parsed = JSON.parse(cleanedText) as ProgressEvaluationResult;
-    const sanitized = sanitizeProgressEvaluation(parsed);
-    if (compactWhenCorrect && sanitized.correct) {
-      return { ...sanitized, issues: [], hints: [] };
-    }
-    return sanitized;
-  } catch (e) {
-    throw new Error("Failed to parse AI response for progress evaluation.");
+  const payload = await evaluateAgainstCanonical(challenge, submission);
+  const progress: ProgressEvaluationResult = {
+    correct: payload.correct,
+    summary: payload.summary,
+    issues: payload.issues,
+    hints: payload.hints,
+    confidence: payload.confidence,
+  };
+  const sanitized = sanitizeProgressEvaluation(progress);
+  if (compactWhenCorrect && sanitized.correct) {
+    return { ...sanitized, issues: [], hints: [] };
   }
+  return sanitized;
 }
