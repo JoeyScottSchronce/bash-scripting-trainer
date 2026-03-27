@@ -1,5 +1,6 @@
 # Build stage
 FROM node:24-slim AS build
+RUN apk upgrade --no-cache
 
 WORKDIR /app
 
