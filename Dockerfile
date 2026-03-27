@@ -1,6 +1,8 @@
 # Build stage
 FROM node:24-slim AS build
 
+RUN apt-get update && apt-get upgrade -y && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
 # Copy package files
@@ -8,7 +10,6 @@ COPY package*.json ./
 
 # Install dependencies
 RUN npm install
-RUN apk upgrade --no-cache
 
 # Copy source code
 COPY . .
