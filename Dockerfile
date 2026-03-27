@@ -1,6 +1,5 @@
 # Build stage
 FROM node:24-slim AS build
-RUN apk upgrade --no-cache
 
 WORKDIR /app
 
@@ -9,6 +8,7 @@ COPY package*.json ./
 
 # Install dependencies
 RUN npm install
+RUN apk upgrade --no-cache
 
 # Copy source code
 COPY . .
