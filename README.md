@@ -37,4 +37,4 @@ docker build -t bashmaster-ai .
 docker run -p 8080:80 bashmaster-ai
 ```
 
-The app will be available at `http://localhost:8080`
+The app will be available at `http://localhost:8080`.
